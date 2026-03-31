@@ -42,9 +42,11 @@ int main() {
 
     bool started = false;
 
-    // Ranking set stores indices into students vector
+    // Live ranking set stores indices into students vector (continuously maintained on UPDATE)
     RankCmp cmp; cmp.pv = &students;
-    set<int, RankCmp> ranking(cmp);
+    set<int, RankCmp> live_ranking(cmp);
+    // Snapshot order from last START/FLUSH for stable printing and query
+    vector<int> snapshot_order;
 
     string cmd;
     while (cin >> cmd) {
@@ -72,16 +74,11 @@ int main() {
             idx[name] = id;
         } else if (cmd == "START") {
             if (!started) {
-                // build ranking
-                ranking.clear();
-                for (int i = 0; i < (int)students.size(); ++i) {
-                    ranking.insert(i);
-                }
-                // assign ranks
-                int r = 1;
-                for (int id : ranking) {
-                    students[id].rank = r++;
-                }
+                live_ranking.clear();
+                for (int i = 0; i < (int)students.size(); ++i) live_ranking.insert(i);
+                snapshot_order.clear(); snapshot_order.reserve(students.size());
+                for (int id : live_ranking) snapshot_order.push_back(id);
+                int r = 1; for (int id : snapshot_order) students[id].rank = r++;
                 started = true;
             }
         } else if (cmd == "UPDATE") {
@@ -93,16 +90,17 @@ int main() {
                 continue;
             }
             int id = it->second;
+            if (started) live_ranking.erase(id); // maintain live ranking position
             students[id].score[code] = score;
             students[id].avg = compute_avg(students[id].score);
-            // Do not change ranking order until FLUSH
+            if (started) live_ranking.insert(id);
+            // Snapshot order and displayed ranks remain unchanged until FLUSH
         } else if (cmd == "FLUSH") {
             if (started) {
-                // Rebuild ranking snapshot using current data
-                ranking.clear();
-                for (int i = 0; i < (int)students.size(); ++i) ranking.insert(i);
-                int r = 1;
-                for (int id : ranking) students[id].rank = r++;
+                // Refresh snapshot from live ranking and update displayed ranks
+                snapshot_order.clear(); snapshot_order.reserve(students.size());
+                for (int id : live_ranking) snapshot_order.push_back(id);
+                int r = 1; for (int id : snapshot_order) students[id].rank = r++;
             }
         } else if (cmd == "PRINTLIST") {
             if (!started) {
@@ -110,7 +108,7 @@ int main() {
                 // But handle gracefully: treat current order as empty list printed nothing
             }
             int r = 1;
-            for (int id : ranking) {
+            for (int id : snapshot_order) {
                 const Student &s = students[id];
                 cout << r << ' ' << s.name << ' ' << (s.gender == 'M' ? "male" : "female")
                      << ' ' << s.clazz << ' ' << s.avg << '\n';
